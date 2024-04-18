@@ -91,9 +91,31 @@ pub trait MathematicalOps {
     /// e<sup>y*ln(x)</sup> is used.
     fn powd(&self, exp: Decimal) -> Decimal;
 
-    /// Raise self to the given Decimal exponent x<sup>y</sup> returning `None` on overflow.
+    /// Raise self to the given floating point exponent x<sup>y</sup> returning `None` on overflow, using the `tolerance` provided as a hint
+    /// as to when to stop calculating. A larger tolerance will cause the number to stop calculating
+    /// sooner at the potential cost of a slightly less accurate result.
+    fn powf_with_tolerance(&self, exp: f64, tolerance: Decimal) -> Decimal;
+
+    /// Raise self to the given floating point exponent x<sup>y</sup> returning `None` on overflow, using the `tolerance` provided as a hint
+    /// as to when to stop calculating. A larger tolerance will cause the number to stop calculating
+    /// sooner at the potential cost of a slightly less accurate result.
+    fn checked_powf_with_tolerance(&self, exp: f64, tolerance: Decimal) -> Option<Decimal>;
+
+    /// Raise self to the given Decimal exponent x<sup>y</sup> returning `None` on overflow, using the `tolerance` provided as a hint
+    /// as to when to stop calculating. A larger tolerance will cause the number to stop calculating
+    /// sooner at the potential cost of a slightly less accurate result.
     /// If `exp` is not whole then the approximation e<sup>y*ln(x)</sup> is used.
     fn checked_powd(&self, exp: Decimal) -> Option<Decimal>;
+
+    /// Raise self to the given Decimal exponent: x<sup>y</sup>. If `exp` is not whole then the approximation
+    /// e<sup>y*ln(x)</sup> is used.
+    fn powd_with_tolerance(&self, exp: Decimal, tolerance: Decimal) -> Decimal;
+
+    /// Raise self to the given Decimal exponent x<sup>y</sup> returning `None` on overflow, using the `tolerance` provided as a hint
+    /// as to when to stop calculating. A larger tolerance will cause the number to stop calculating
+    /// sooner at the potential cost of a slightly less accurate result.
+    /// If `exp` is not whole then the approximation e<sup>y*ln(x)</sup> is used.
+    fn checked_powd_with_tolerance(&self, exp: Decimal, tolerance: Decimal) -> Option<Decimal>;
 
     /// The square root of a Decimal. Uses a standard Babylonian method.
     fn sqrt(&self) -> Option<Decimal>;
@@ -284,6 +306,21 @@ impl MathematicalOps for Decimal {
         self.checked_powd(exp)
     }
 
+    fn powf_with_tolerance(&self, exp: f64, tolerance: Decimal) -> Decimal {
+        match self.checked_powf_with_tolerance(exp, tolerance) {
+            Some(result) => result,
+            None => panic!("Pow overflowed"),
+        }
+    }
+
+    fn checked_powf_with_tolerance(&self, exp: f64, tolerance: Decimal) -> Option<Decimal> {
+        let exp = match Decimal::from_f64(exp) {
+            Some(f) => f,
+            None => return None,
+        };
+        self.checked_powd_with_tolerance(exp, tolerance)
+    }
+
     fn powd(&self, exp: Decimal) -> Decimal {
         match self.checked_powd(exp) {
             Some(result) => result,
@@ -328,6 +365,54 @@ impl MathematicalOps for Decimal {
             None => return None,
         };
         let mut result = e.checked_exp()?;
+        result.set_sign_negative(negative);
+        Some(result)
+    }
+
+    fn powd_with_tolerance(&self, exp: Decimal, tolerance: Decimal) -> Decimal {
+        match self.checked_powd_with_tolerance(exp, tolerance) {
+            Some(result) => result,
+            None => panic!("Pow overflowed"),
+        }
+    }
+
+    fn checked_powd_with_tolerance(&self, exp: Decimal, tolerance: Decimal) -> Option<Decimal> {
+        if exp.is_zero() {
+            return Some(Decimal::ONE);
+        }
+        if self.is_zero() {
+            return Some(Decimal::ZERO);
+        }
+        if self.is_one() {
+            return Some(Decimal::ONE);
+        }
+        if exp.is_one() {
+            return Some(*self);
+        }
+
+        // If the scale is 0 then it's a trivial calculation
+        let exp = exp.normalize();
+        if exp.scale() == 0 {
+            if exp.mid() != 0 || exp.hi() != 0 {
+                // Exponent way too big
+                return None;
+            }
+
+            return if exp.is_sign_negative() {
+                self.checked_powi(-(exp.lo() as i64))
+            } else {
+                self.checked_powu(exp.lo() as u64)
+            };
+        }
+
+        // We do some approximations since we've got a decimal exponent.
+        // For positive bases: a^b = exp(b*ln(a))
+        let negative = self.is_sign_negative();
+        let e = match self.abs().ln().checked_mul(exp) {
+            Some(e) => e,
+            None => return None,
+        };
+        let mut result = e.checked_exp_with_tolerance(tolerance)?;
         result.set_sign_negative(negative);
         Some(result)
     }

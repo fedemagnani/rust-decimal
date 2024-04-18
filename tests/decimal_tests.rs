@@ -3899,6 +3899,50 @@ mod maths {
     }
 
     #[test]
+    fn test_powd_with_tolerance() {
+        let tol = Decimal::ZERO;
+        let num_s = vec!["10", "3.222", "199.45", "342.4"];
+        let exp = vec!["2", "5", "0.5", "2"];
+        for num in &num_s {
+            for exp in &exp {
+                let num_dec = Decimal::from_str(num).unwrap();
+                let exp_dec = Decimal::from_str(exp).unwrap();
+                assert!(
+                    (num_dec
+                        - num_dec
+                            .powd_with_tolerance(exp_dec, tol)
+                            .powd_with_tolerance(Decimal::ONE / exp_dec, tol))
+                    .abs()
+                        < (num_dec - num_dec.powd(exp_dec).powd(Decimal::one() / exp_dec)).abs()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_powf_with_tolerance() {
+        let tol = Decimal::ZERO;
+
+        let num_s = vec!["10", "3.222", "199.45", "342.4"];
+
+        let exp = vec!["2", "5", "0.5", "2"];
+        for num in &num_s {
+            for exp in &exp {
+                let num_dec = Decimal::from_str(num).unwrap();
+                let exp_f64 = exp.parse::<f64>().unwrap();
+                assert!(
+                    (num_dec
+                        - num_dec
+                            .powf_with_tolerance(exp_f64, tol)
+                            .powf_with_tolerance(1.0 / exp_f64, tol))
+                    .abs()
+                        < (num_dec - num_dec.powf(exp_f64).powf(1.0 / exp_f64)).abs()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_sqrt() {
         let test_cases = &[
             ("4", "2"),
